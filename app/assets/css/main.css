@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+@source "../../../nuxt.config.ts";
+
+@theme {
+	--font-sans:
+		"Albert Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+		"Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}

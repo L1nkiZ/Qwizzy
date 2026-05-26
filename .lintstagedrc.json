@@ -1,0 +1,3 @@
+{
+	"*.{js,ts,vue,json,css,scss,yml,yaml,toml,md,mdx,html}": "pnpm format"
+}
