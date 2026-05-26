@@ -63,7 +63,7 @@ jobs:
           tools: composer:v2
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: Qwizzy_API/vendor
           key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
@@ -130,7 +130,7 @@ jobs:
           tools: composer:v2, phpcs
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: Qwizzy_API/vendor
           key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
@@ -250,7 +250,7 @@ jobs:
           tools: composer:v2
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: Qwizzy_API/vendor
           key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
