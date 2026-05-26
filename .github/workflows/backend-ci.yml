@@ -282,7 +282,7 @@ jobs:
             type=sha
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: Qwizzy_API
           push: false
