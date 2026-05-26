@@ -1,0 +1,86 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [master, develop, "feat/**", "fix/**"]
+    paths:
+      - "Qwizzy_Front/**"
+      - ".github/workflows/frontend-ci.yml"
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    paths:
+      - "Qwizzy_Front/**"
+      - ".github/workflows/frontend-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Lint, Typecheck & Formatting
+  # ─────────────────────────────────────────────
+  quality:
+    name: Lint, Typecheck & Formatting
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Qwizzy_Front
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "pnpm"
+          cache-dependency-path: "Qwizzy_Front/pnpm-lock.yaml"
+
+      - name: Installing dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Running Lint
+        run: pnpm lint
+
+      - name: Running Typecheck
+        run: pnpm typecheck
+
+      - name: Running Formatting check
+        run: pnpm format:check
+
+  # ─────────────────────────────────────────────
+  # Unit Tests
+  # ─────────────────────────────────────────────
+  tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Qwizzy_Front
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "pnpm"
+          cache-dependency-path: "Qwizzy_Front/pnpm-lock.yaml"
+
+      - name: Installing dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Running tests
+        run: pnpm test run

@@ -1,95 +1,80 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-# Nuxt dev/build outputs
-.output
-.data
-.nuxt
-.nitro
-.cache
-dist
+# ==============================
+# Dependencies
+# ==============================
+node_modules/
+Qwizzy_API/vendor/
 
-# Node dependencies
-node_modules
+# ==============================
+# Frontend — Nuxt (Qwizzy_Front)
+# ==============================
+Qwizzy_Front/.output/
+Qwizzy_Front/.data/
+Qwizzy_Front/.nuxt/
+Qwizzy_Front/.nitro/
+Qwizzy_Front/.cache/
+Qwizzy_Front/dist/
+Qwizzy_Front/.eslintcache
+Qwizzy_Front/.pnpm-store/
+Qwizzy_Front/node-compile-cache/
 
-# Logs
-logs
-*.log
+# ==============================
+# Backend — Laravel (Qwizzy_API)
+# ==============================
+Qwizzy_API/public/build/
+Qwizzy_API/public/hot
+Qwizzy_API/public/storage
+Qwizzy_API/public/coverage/
+Qwizzy_API/storage/*.key
+Qwizzy_API/storage/app/public
+Qwizzy_API/storage/logs/*.log
+Qwizzy_API/storage/framework/cache/
+Qwizzy_API/storage/framework/sessions/
+Qwizzy_API/storage/framework/testing/
+Qwizzy_API/storage/framework/views/
+Qwizzy_API/storage/coverage.xml
+Qwizzy_API/.phpunit.result.cache
+Qwizzy_API/.phpunit.cache
+Qwizzy_API/phpunit.xml.bak
+Qwizzy_API/auth.json
+Qwizzy_API/Homestead.json
+Qwizzy_API/Homestead.yaml
 
-# Misc
-.DS_Store
-.fleet
-.idea
-
-# Local env files
+# ==============================
+# Environment files
+# ==============================
 .env
 .env.*
 !.env.example
 
-# Eslint cache
-.eslintcache
-
-# pnpm store and compile cache
-.pnpm-store
-node-compile-cache
-=======
-# Dependencies
-/node_modules
-/vendor
-
-# Build / compiled assets
-/public/build
-/public/hot
-
-# Storage (generated at runtime)
-/public/storage
-/storage/*.key
-/storage/app/public
-/storage/logs/*.log
-/storage/framework/cache
-/storage/framework/sessions
-/storage/framework/testing
-/storage/framework/views
-
-# Test coverage reports
-/public/coverage
-/storage/coverage.xml
-
-# PHPUnit
-.phpunit.result.cache
-.phpunit.cache
-phpunit.xml.bak
-
-# Environment files
-.env
-.env.backup
-.env.production
-.env.testing.local
-.env.*.local
-
-# Docker generated files
+# ==============================
+# Docker
+# ==============================
 docker-compose.override.yml
 
-# IDE / editor
-/.fleet
-/.idea
-/.vscode
+# ==============================
+# IDE / Editor
+# ==============================
+.idea/
+.fleet/
+.vscode/
 
-# Vagrant
-Homestead.json
-Homestead.yaml
-
-# Composer auth
-auth.json
-
-# Logs
-npm-debug.log
-yarn-error.log
-*.log
-
+# ==============================
 # OS
+# ==============================
 .DS_Store
 Thumbs.db
->>>>>>> temp-api/master
-=======
+*.swp
+*~
+
+# ==============================
+# Logs
+# ==============================
+*.log
+logs/
+npm-debug.log
+yarn-error.log
+
+# ==============================
+# Documentation générée
+# ==============================
 *.pdf
->>>>>>> temp-env/master
