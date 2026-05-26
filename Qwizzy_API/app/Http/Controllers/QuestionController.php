@@ -1,0 +1,761 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Helpers\RoleHelper;
+use Illuminate\Http\Request;
+use Validator;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Cache;
+use App\Http\Traits\ErrorTrait;
+
+use App\Models\Question;
+use App\Models\Answer;
+use App\Models\Difficulty;
+use App\Models\QuestionType;
+use App\Models\Subject;
+
+class QuestionController extends Controller
+{
+    /**
+     * Filtrer les questions par thème via son ID (subject.id)
+     *
+     * @OA\Get(
+     *      path="/api/questions/theme/{id}",
+     *      operationId="getQuestionsByThemeId",
+     *      tags={"Question"},
+     *      summary="Obtenir les questions par ID de thème",
+     *      description="Retourne toutes les questions associées à un thème en utilisant l'ID de la matière",
+     *
+     *      @OA\Parameter(
+     *          name="id",
+     *          description="ID du thème (subject)",
+     *          required=true,
+     *          in="path",
+     *
+     *          @OA\Schema(type="integer", example=1)
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Liste des questions filtrée avec succès",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="questions", type="array", @OA\Items(type="object"))
+     *          )
+     *       ),
+     *
+     *      @OA\Response(
+     *          response=404,
+     *          description="Thème non trouvé"
+     *      )
+     * )
+     */
+    public function byThemeId(int $id)
+    {
+        $subject = Subject::find($id);
+
+        if (! $subject) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Thème non trouvé',
+            ], 404);
+        }
+
+        $questions = Cache::remember("questions_theme_{$id}", config('cache.ttl', 3600), function () use ($id) {
+            return Question::with([
+                'difficulty' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'subject' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'question_type' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'answers',
+            ])
+                ->where('subject_id', $id)
+                ->get();
+        });
+
+        return response()->json(compact('questions'));
+    }
+
+    /**
+     * Filtrer les questions par thème (subject.name)
+     *
+     * @OA\Get(
+     *      path="/api/questions/by-theme",
+     *      operationId="getQuestionsByTheme",
+     *      tags={"Question"},
+     *      summary="Obtenir les questions par thème",
+     *      description="Retourne toutes les questions associées à un thème (nom de la matière)",
+     *
+     *      @OA\Parameter(
+     *          name="theme",
+     *          description="Nom du thème (correspond au nom de la matière)",
+     *          required=true,
+     *          in="query",
+     *
+     *          @OA\Schema(type="string", example="The Witcher")
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Liste des questions filtrée avec succès",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="questions", type="array", @OA\Items(type="object"))
+     *          )
+     *       ),
+     *
+     *      @OA\Response(
+     *          response=422,
+     *          description="Erreur de validation",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="error", type="boolean", example=true),
+     *              @OA\Property(property="message", type="object")
+     *          )
+     *      )
+     * )
+     */
+    public function byTheme(Request $request)
+    {
+        $theme = $request->input('theme');
+
+        if (!$theme) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Le thème est requis',
+            ]);
+        } else {
+            $cacheKey = "questions_by_theme_" . md5($theme);
+
+            $questions = Cache::remember($cacheKey, config('cache.ttl', 3600), function () use ($theme) {
+                return Question::with([
+                    'difficulty' => function ($query) {
+                        $query->select('id', 'name');
+                    },
+                    'subject' => function ($query) {
+                        $query->select('id', 'name');
+                    },
+                    'question_type' => function ($query) {
+                        $query->select('id', 'name');
+                    },
+                    'answers',
+                ])->whereHas('subject', function ($q) use ($theme) {
+                    $q->where('name', 'like', '%' . $theme . '%');
+                })->get();
+            });
+
+            return response()->json(compact('questions'));
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     *
+     * @OA\Get(
+     *      path="/api/questions",
+     *      operationId="getQuestionsList",
+     *      tags={"Question"},
+     *      summary="Obtenir la liste des questions",
+     *      description="Retourne la liste paginée des questions avec leurs relations",
+     *
+     *      @OA\Parameter(
+     *          name="current_sort",
+     *          description="Champ de tri",
+     *          required=false,
+     *          in="query",
+     *
+     *          @OA\Schema(type="string", default="id")
+     *      ),
+     *
+     *      @OA\Parameter(
+     *          name="current_sort_dir",
+     *          description="Direction du tri",
+     *          required=false,
+     *          in="query",
+     *
+     *          @OA\Schema(type="string", enum={"asc", "desc"}, default="asc")
+     *      ),
+     *
+     *      @OA\Parameter(
+     *          name="per_page",
+     *          description="Nombre d'éléments par page",
+     *          required=false,
+     *          in="query",
+     *
+     *          @OA\Schema(type="integer", default=15)
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Liste des questions récupérée avec succès",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="questions", type="object")
+     *          )
+     *       )
+     * )
+     */
+    public function index(Request $request)
+    {
+        $perPage = $request->per_page ?? 15;
+        $page = $request->page ?? 1;
+        $sortBy = $request->current_sort ?? 'id';
+        $sortDir = $request->current_sort_dir ?? 'asc';
+
+        $cacheKey = "questions_index_" . md5("{$sortBy}_{$sortDir}_{$perPage}_{$page}");
+
+        $questions = Cache::remember($cacheKey, config('cache.ttl', 3600), function () use ($request) {
+            return Question::with([
+                'difficulty' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'subject' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'question_type' => function ($query) {
+                    $query->select('id', 'name');
+                },
+            ])
+                ->orderBy($request->current_sort ?? 'id', $request->current_sort_dir ?? 'asc')
+                ->paginate($request->per_page ?? 15);
+        });
+
+        return response()->json(compact('questions'));
+    }
+
+    public function indexFiltered(Request $request)
+    {
+        $subjectId = $request->subject_id ?? null;
+        $perPage = $request->per_page ?? 15;
+        $page = $request->page ?? 1;
+        $sortBy = $request->current_sort ?? 'id';
+        $sortDir = $request->current_sort_dir ?? 'asc';
+
+        $cacheKey = "questions_filtered_{$subjectId}_" . md5("{$sortBy}_{$sortDir}_{$perPage}_{$page}");
+
+        $questions = Cache::remember($cacheKey, config('cache.ttl', 3600), function () use ($request, $subjectId) {
+            return Question::with([
+                'difficulty' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'subject' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'question_type' => function ($query) {
+                    $query->select('id', 'name');
+                },
+            ])
+                ->where('subject_id', $subjectId)
+                ->orderBy($request->current_sort ?? 'id', $request->current_sort_dir ?? 'asc')
+                ->paginate($request->per_page ?? 15);
+        });
+
+        return response()->json(compact('questions'));
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     *
+     * @OA\Get(
+     *      path="/api/questions/create",
+     *      operationId="getQuestionCreateData",
+     *      tags={"Question"},
+     *      summary="Obtenir les données pour créer une question",
+     *      description="Retourne les listes des difficultés, matières et types de questions disponibles",
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Données récupérées avec succès",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="difficulties", type="array", @OA\Items(type="object")),
+     *              @OA\Property(property="subjects", type="array", @OA\Items(type="object")),
+     *              @OA\Property(property="question_types", type="array", @OA\Items(type="object"))
+     *          )
+     *       )
+     * )
+     */
+    public function create()
+    {
+        $difficulties = Difficulty::select('id', 'name', 'point')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        $subjects = Subject::select('id', 'name')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        $question_types = QuestionType::select('id', 'name')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        return response()->json(compact('difficulties', 'subjects', 'question_types'));
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     *
+     * @OA\Post(
+     *      path="/api/questions",
+     *      operationId="storeQuestion",
+     *      security={{"bearerAuth":{}}},
+     *      tags={"Question"},
+     *      summary="Créer une nouvelle question",
+     *      description="Crée une nouvelle question avec 4 propositions et indique le numéro de la bonne réponse (1, 2, 3 ou 4)",
+     *
+     *      @OA\RequestBody(
+     *          required=true,
+     *
+     *          @OA\JsonContent(
+     *              required={"question","proposal_1","proposal_2","proposal_3","proposal_4","correct_answer_number","subject_id","difficulty_id","question_type_id"},
+     *
+     *              @OA\Property(property="question", type="string", maxLength=500, example="Quelle est la capitale de la France ?"),
+     *              @OA\Property(property="proposal_1", type="string", maxLength=100, example="Paris"),
+     *              @OA\Property(property="proposal_2", type="string", maxLength=100, example="Lyon"),
+     *              @OA\Property(property="proposal_3", type="string", maxLength=100, example="Marseille"),
+     *              @OA\Property(property="proposal_4", type="string", maxLength=100, example="Bordeaux"),
+     *              @OA\Property(property="correct_answer_number", type="integer", minimum=1, maximum=4, example=1, description="Numéro de la proposition correcte (1 à 4)"),
+     *              @OA\Property(property="subject_id", type="integer", example=1),
+     *              @OA\Property(property="difficulty_id", type="integer", example=1),
+     *              @OA\Property(property="question_type_id", type="integer", example=1),
+     *          ),
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=201,
+     *          description="Question créée avec succès",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="message", type="string", example="Question créée avec succès"),
+     *              @OA\Property(property="question", type="object"),
+     *              @OA\Property(property="answer", type="object")
+     *          )
+     *       ),
+     *
+     *      @OA\Response(
+     *          response=422,
+     *          description="Erreur de validation",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="error", type="boolean", example=true),
+     *              @OA\Property(property="message", type="object")
+     *          )
+     *      )
+     * )
+     */
+    public function store(Request $request)
+    {
+        $token = $request->bearerToken() ?? $request->header('Authorization');
+        if ($token && Str::startsWith($token, 'Bearer ')) {
+            $token = substr($token, 7);
+        }
+
+        $role = RoleHelper::getRole($token);
+
+        if ($role !== 2 && $role !== 3) { // assuming 2 is the editor role ID and 3 is the admin role ID
+            return response()->json([
+                'error' => true,
+                'message' => 'Accès refusé : privilèges insuffisants'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'question' => 'required|string|max:500',
+            'proposal_1' => 'required|string|max:100',
+            'proposal_2' => 'required|string|max:100',
+            'proposal_3' => 'required|string|max:100',
+            'proposal_4' => 'required|string|max:100',
+            'correct_answer_number' => 'required|integer|min:1|max:4',
+            'subject_id' => 'required|exists:subject,id',
+            'difficulty_id' => 'required|exists:difficulty,id',
+            'question_type_id' => 'required|exists:question_type,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => true,
+                'message' => $validator->messages(),
+            ]);
+        }
+
+        // Créer la question avec les 4 propositions
+        $question = Question::create([
+            'question' => $request->question,
+            'subject_id' => $request->subject_id,
+            'difficulty_id' => $request->difficulty_id,
+            'question_type_id' => $request->question_type_id,
+            'proposal_1' => $request->proposal_1,
+            'proposal_2' => $request->proposal_2,
+            'proposal_3' => $request->proposal_3,
+            'proposal_4' => $request->proposal_4,
+        ]);
+
+        // Créer la réponse avec le numéro de la proposition correcte (1 à 4)
+        $answer = Answer::create([
+            'answer' => $request->correct_answer_number,
+            'question_id' => $question->id,
+        ]);
+
+        // Invalider les caches
+        $this->clearQuestionsCaches($question->subject_id);
+
+        return response()->json([
+            'message' => 'Question créée avec succès',
+            'question' => $question,
+            'answer' => $answer,
+        ]);
+    }
+
+    /**
+     * Display the specified resource.
+     *
+     * @OA\Get(
+     *      path="/api/questions/show/{id}",
+     *      operationId="showQuestion",
+     *      tags={"Question"},
+     *      summary="Afficher une question",
+     *      description="Retourne les détails d'une question spécifique avec ses relations (difficulté, sujet, type, réponses)",
+     *
+     *      @OA\Parameter(
+     *          name="id",
+     *          description="ID de la question",
+     *          required=true,
+     *          in="path",
+     *
+     *          @OA\Schema(type="integer")
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Question récupérée avec succès",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="question", type="object")
+     *          )
+     *       ),
+     *
+     *      @OA\Response(
+     *          response=404,
+     *          description="Question non trouvée"
+     *      )
+     * )
+     */
+    public function show(string $id)
+    {
+        $question = Cache::remember("question_{$id}", config('cache.ttl', 3600), function () use ($id) {
+            return Question::with([
+                'difficulty' => function ($query) {
+                    $query->select('id', 'name', 'point');
+                },
+                'subject' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'question_type' => function ($query) {
+                    $query->select('id', 'name');
+                },
+                'answers',
+            ])->find($id);
+        });
+
+        if (! $question) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Question non trouvée',
+            ], 404);
+        }
+
+        return response()->json(compact('question'));
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     *
+     * @OA\Get(
+     *      path="/api/questions/edit/{id}",
+     *      operationId="getQuestionEditData",
+     *      tags={"Question"},
+     *      summary="Obtenir les données pour éditer une question",
+     *      description="Retourne les listes des difficultés, matières et types de questions disponibles pour l'édition",
+     *
+     *      @OA\Parameter(
+     *          name="id",
+     *          description="ID de la question",
+     *          required=true,
+     *          in="path",
+     *
+     *          @OA\Schema(type="integer")
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Données récupérées avec succès",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="difficulties", type="array", @OA\Items(type="object")),
+     *              @OA\Property(property="subjects", type="array", @OA\Items(type="object")),
+     *              @OA\Property(property="question_types", type="array", @OA\Items(type="object"))
+     *          )
+     *       )
+     * )
+     */
+    public function edit(string $id)
+    {
+        $difficulties = Difficulty::select('id', 'name', 'point')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        $subjects = Subject::select('id', 'name')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        $question_types = QuestionType::select('id', 'name')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        $question = Question::with('answers')->find($id);
+
+        return response()->json(compact('difficulties', 'subjects', 'question_types', 'question'));
+    }
+
+    /**
+     * Update the specified resource in storage.
+     *
+     * @OA\Put(
+     *      path="/api/questions/{id}",
+     *      operationId="updateQuestion",
+     *      tags={"Question"},
+     *      summary="Mettre à jour une question",
+     *      description="Met à jour une question existante avec 4 propositions et le numéro de la bonne réponse",
+     *      security={{"bearerAuth":{}}},
+     *      @OA\Parameter(
+     *          name="id",
+     *          description="ID de la question",
+     *          required=true,
+     *          in="path",
+     *
+     *          @OA\Schema(type="integer")
+     *      ),
+     *
+     *      @OA\RequestBody(
+     *          required=true,
+     *
+     *          @OA\JsonContent(
+     *              required={"question","proposal_1","proposal_2","proposal_3","proposal_4","correct_answer_number","subject_id","difficulty_id","question_type_id"},
+     *
+     *              @OA\Property(property="question", type="string", maxLength=500, example="Quelle est la capitale de la France ?"),
+     *              @OA\Property(property="proposal_1", type="string", maxLength=100, example="Paris"),
+     *              @OA\Property(property="proposal_2", type="string", maxLength=100, example="Lyon"),
+     *              @OA\Property(property="proposal_3", type="string", maxLength=100, example="Marseille"),
+     *              @OA\Property(property="proposal_4", type="string", maxLength=100, example="Bordeaux"),
+     *              @OA\Property(property="correct_answer_number", type="integer", minimum=1, maximum=4, example=1, description="Numéro de la proposition correcte (1 à 4)"),
+     *              @OA\Property(property="subject_id", type="integer", example=1),
+     *              @OA\Property(property="difficulty_id", type="integer", example=1),
+     *              @OA\Property(property="question_type_id", type="integer", example=1),
+     *          ),
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Question mise à jour avec succès",
+     *
+     *          @OA\JsonContent()
+     *       ),
+     *
+     *      @OA\Response(
+     *          response=404,
+     *          description="Question non trouvée"
+     *      ),
+     *      @OA\Response(
+     *          response=422,
+     *          description="Erreur de validation",
+     *
+     *          @OA\JsonContent(
+     *
+     *              @OA\Property(property="error", type="boolean", example=true),
+     *              @OA\Property(property="message", type="object")
+     *          )
+     *      )
+     * )
+     */
+    public function update(Request $request, string $id)
+    {
+        $token = $request->bearerToken() ?? $request->header('Authorization');
+
+        if ($token == null) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Accès refusé : utilisateur non connecté'
+            ], 401);
+        }
+
+        if ($token && Str::startsWith($token, 'Bearer ')) {
+            $token = substr($token, 7);
+        }
+
+        $role = RoleHelper::getRole($token);
+
+        if ($role !== 3) { // assuming 3 is the admin role ID
+            return response()->json([
+                'error' => true,
+                'message' => 'Accès refusé : privilèges insuffisants'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'question' => 'required|string|max:500|unique:question,question,' . $id,
+            'proposal_1' => 'required|string|max:100',
+            'proposal_2' => 'required|string|max:100',
+            'proposal_3' => 'required|string|max:100',
+            'proposal_4' => 'required|string|max:100',
+            'correct_answer_number' => 'required|integer|min:1|max:4',
+            'subject_id' => 'required|numeric|exists:subject,id',
+            'difficulty_id' => 'required|numeric|exists:difficulty,id',
+            'question_type_id' => 'required|numeric|exists:question_type,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => true,
+                'message' => $validator->messages(),
+            ]);
+        }
+
+        $question = Question::find($id);
+
+        if (!$question) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Question non trouvée',
+            ]);
+        }
+
+        // Mettre à jour la question avec les 4 propositions
+        $question->update([
+            'question' => $request->question,
+            'subject_id' => $request->subject_id,
+            'difficulty_id' => $request->difficulty_id,
+            'question_type_id' => $request->question_type_id,
+            'proposal_1' => $request->proposal_1,
+            'proposal_2' => $request->proposal_2,
+            'proposal_3' => $request->proposal_3,
+            'proposal_4' => $request->proposal_4,
+        ]);
+
+        // Mettre à jour la réponse avec le numéro de la proposition correcte
+        $answer = Answer::where('question_id', $question->id)->first();
+        if ($answer) {
+            $answer->update([
+                'answer' => $request->correct_answer_number,
+            ]);
+        } else {
+            // Si la réponse n'existe pas, la créer
+            Answer::create([
+                'answer' => $request->correct_answer_number,
+                'question_id' => $question->id,
+            ]);
+        }
+
+        // Vider les caches
+        $this->clearQuestionsCaches($question->subject_id);
+        Cache::forget("question_{$id}");
+
+        return response()->json([
+            'message' => 'Question mise à jour avec succès',
+            'question' => $question,
+            'answer' => $answer,
+        ]);
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     *
+     * @OA\Delete(
+     *      path="/api/questions/{id}",
+     *      operationId="deleteQuestion",
+     *      tags={"Question"},
+     *      summary="Supprimer une question",
+     *      description="Supprime une question existante",
+     *
+     *      @OA\Parameter(
+     *          name="id",
+     *          description="ID de la question",
+     *          required=true,
+     *          in="path",
+     *
+     *          @OA\Schema(type="integer")
+     *      ),
+     *
+     *      @OA\Response(
+     *          response=200,
+     *          description="Question supprimée avec succès",
+     *
+     *          @OA\JsonContent()
+     *       ),
+     *
+     *      @OA\Response(
+     *          response=404,
+     *          description="Question non trouvée"
+     *      )
+     * )
+     */
+    public function destroy(string $id)
+    {
+        $question = Question::find($id);
+
+        if (!$question) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Question non trouvée',
+            ], 404);
+        }
+
+        $subjectId = $question->subject_id;
+
+        // Supprimer la ou les réponses associées
+        Answer::where('question_id', $question->id)->delete();
+
+        // Supprimer la question
+        $question->delete();
+
+        // Invalider les caches
+        $this->clearQuestionsCaches($subjectId);
+        Cache::forget("question_{$id}");
+
+        return response()->json([
+            'message' => 'Question supprimée avec succès',
+        ]);
+    }
+
+    /**
+     * Nettoie tous les caches liés aux questions
+     */
+    private function clearQuestionsCaches($subjectId = null)
+    {
+        // Supprimer les caches généraux
+        Cache::forget('questions_index_*');
+        Cache::forget('questions_filtered_*');
+
+        // Supprimer les caches spécifiques au thème
+        if ($subjectId) {
+            Cache::forget("questions_theme_{$subjectId}");
+        }
+
+        // Clear tous les caches qui contiennent des questions
+        Cache::flush();
+    }
+}
