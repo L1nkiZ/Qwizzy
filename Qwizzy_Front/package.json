@@ -20,7 +20,7 @@
 	},
 	"dependencies": {
 		"@compodium/nuxt": "0.1.0-beta.11",
-		"@iconify-json/lucide": "~1.2.68",
+		"@iconify-json/lucide": "~1.2.117",
 		"@nuxt/kit": "~4.0.3",
 		"@nuxt/ui": "~4.0.1",
 		"@pinia/nuxt": "0.11.2",
