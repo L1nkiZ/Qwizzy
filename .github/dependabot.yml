@@ -1,106 +1,108 @@
-version: 2
-
-updates:
-  # ─────────────────────────────────────────────
-  # Backend — Composer (PHP / Laravel)
-  # ─────────────────────────────────────────────
-  - package-ecosystem: "composer"
-    directory: "/Qwizzy_API"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "backend"
-    commit-message:
-      prefix: "chore(api)"
-      include: "scope"
-    groups:
-      laravel-packages:
-        patterns:
-          - "laravel/*"
-          - "illuminate/*"
-      development-dependencies:
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
-
-  # ─────────────────────────────────────────────
-  # Frontend — npm/pnpm (Nuxt / Vue)
-  # ─────────────────────────────────────────────
-  - package-ecosystem: "npm"
-    directory: "/Qwizzy_Front"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "frontend"
-    commit-message:
-      prefix: "chore(front)"
-      include: "scope"
-    groups:
-      nuxt-packages:
-        patterns:
-          - "nuxt"
-          - "@nuxt/*"
-      vue-packages:
-        patterns:
-          - "vue"
-          - "vue-router"
-          - "@vue/*"
-      development-dependencies:
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
-
-  # ─────────────────────────────────────────────
-  # GitHub Actions
-  # ─────────────────────────────────────────────
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    labels:
-      - "dependencies"
-      - "github-actions"
-    commit-message:
-      prefix: "chore(ci)"
-
-  # ─────────────────────────────────────────────
-  # Docker — Backend
-  # ─────────────────────────────────────────────
-  - package-ecosystem: "docker"
-    directory: "/Qwizzy_API"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    labels:
-      - "dependencies"
-      - "docker"
-      - "backend"
-    commit-message:
-      prefix: "chore(api)"
-
-  # ─────────────────────────────────────────────
-  # Docker — Frontend
-  # ─────────────────────────────────────────────
-  - package-ecosystem: "docker"
-    directory: "/Qwizzy_Front"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    labels:
-      - "dependencies"
-      - "docker"
-      - "frontend"
-    commit-message:
-      prefix: "chore(front)"
+# Désactivation du dependabot pour ce projet
+# version: 2
+# 
+# updates:
+#   # ─────────────────────────────────────────────
+#   # Backend — Composer (PHP / Laravel)
+#   # ─────────────────────────────────────────────
+#   - package-ecosystem: "composer"
+#     directory: "/Qwizzy_API"
+#     schedule:
+#       interval: "weekly"
+#       day: "monday"
+#       time: "09:00"
+#     open-pull-requests-limit: 10
+#     labels:
+#       - "dependencies"
+#       - "backend"
+#     commit-message:
+#       prefix: "chore(api)"
+#       include: "scope"
+#     groups:
+#       laravel-packages:
+#         patterns:
+#           - "laravel/*"
+#           - "illuminate/*"
+#       development-dependencies:
+#         dependency-type: "development"
+#         update-types:
+#           - "minor"
+#           - "patch"
+# 
+#   # ─────────────────────────────────────────────
+#   # Frontend — npm/pnpm (Nuxt / Vue)
+#   # ─────────────────────────────────────────────
+#   - package-ecosystem: "npm"
+#     directory: "/Qwizzy_Front"
+#     schedule:
+#       interval: "weekly"
+#       day: "monday"
+#       time: "09:00"
+#     open-pull-requests-limit: 10
+#     labels:
+#       - "dependencies"
+#       - "frontend"
+#     commit-message:
+#       prefix: "chore(front)"
+#       include: "scope"
+#     groups:
+#       nuxt-packages:
+#         patterns:
+#           - "nuxt"
+#           - "@nuxt/*"
+#       vue-packages:
+#         patterns:
+#           - "vue"
+#           - "vue-router"
+#           - "@vue/*"
+#       development-dependencies:
+#         dependency-type: "development"
+#         update-types:
+#           - "minor"
+#           - "patch"
+# 
+#   # ─────────────────────────────────────────────
+#   # GitHub Actions
+#   # ─────────────────────────────────────────────
+#   - package-ecosystem: "github-actions"
+#     directory: "/"
+#     schedule:
+#       interval: "weekly"
+#       day: "monday"
+#       time: "09:00"
+#     labels:
+#       - "dependencies"
+#       - "github-actions"
+#     commit-message:
+#       prefix: "chore(ci)"
+# 
+#   # ─────────────────────────────────────────────
+#   # Docker — Backend
+#   # ─────────────────────────────────────────────
+#   - package-ecosystem: "docker"
+#     directory: "/Qwizzy_API"
+#     schedule:
+#       interval: "weekly"
+#       day: "monday"
+#     labels:
+#       - "dependencies"
+#       - "docker"
+#       - "backend"
+#     commit-message:
+#       prefix: "chore(api)"
+# 
+#   # ─────────────────────────────────────────────
+#   # Docker — Frontend
+#   # ─────────────────────────────────────────────
+#   - package-ecosystem: "docker"
+#     directory: "/Qwizzy_Front"
+#     schedule:
+#       interval: "weekly"
+#       day: "monday"
+#     labels:
+#       - "dependencies"
+#       - "docker"
+#       - "frontend"
+#     commit-message:
+#       prefix: "chore(front)"
+# 
