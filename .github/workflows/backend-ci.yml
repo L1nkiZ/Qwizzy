@@ -1,292 +1,293 @@
-name: Backend CI
-
-on:
-  push:
-    branches: [master, develop, "feat/**", "fix/**"]
-    paths:
-      - "Qwizzy_API/**"
-      - ".github/workflows/backend-ci.yml"
-  pull_request:
-    types: [opened, edited, synchronize, reopened]
-    paths:
-      - "Qwizzy_API/**"
-      - ".github/workflows/backend-ci.yml"
-  schedule:
-    - cron: "0 9 * * 1"
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  # ─────────────────────────────────────────────
-  # Tests
-  # ─────────────────────────────────────────────
-  tests:
-    name: 🧪 Tests (PHP ${{ matrix.php-version }})
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: Qwizzy_API
-
-    strategy:
-      fail-fast: false
-      matrix:
-        php-version: ["8.3"]
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: testing
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup PHP ${{ matrix.php-version }}
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php-version }}
-          extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_pgsql, dom, curl, libxml, zip
-          tools: composer:v2
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: Qwizzy_API/vendor
-          key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
-          restore-keys: ${{ runner.os }}-composer-
-
-      - name: Install Composer dependencies
-        run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
-
-      - name: Copy .env file
-        run: cp .env.example .env
-
-      - name: Generate application key
-        run: php artisan key:generate
-
-      - name: Run migrations
-        env:
-          DB_CONNECTION: pgsql
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_DATABASE: testing
-          DB_USERNAME: postgres
-          DB_PASSWORD: password
-        run: php artisan migrate --force
-
-      - name: Execute tests
-        env:
-          DB_CONNECTION: pgsql
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_DATABASE: testing
-          DB_USERNAME: postgres
-          DB_PASSWORD: password
-        run: php artisan test
-
-      - name: Upload test results on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-php-${{ matrix.php-version }}
-          path: Qwizzy_API/storage/logs/
-          retention-days: 7
-
-  # ─────────────────────────────────────────────
-  # Code Quality
-  # ─────────────────────────────────────────────
-  quality:
-    name: Code Quality
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: Qwizzy_API
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.2"
-          tools: composer:v2, phpcs
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: Qwizzy_API/vendor
-          key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
-          restore-keys: ${{ runner.os }}-composer-
-
-      - name: Install dependencies
-        run: composer install --prefer-dist --no-progress --no-interaction
-
-      - name: PHP CodeSniffer (PSR12)
-        run: vendor/bin/phpcs --standard=PSR12 app/ --report=summary
-        continue-on-error: true
-
-      - name: Laravel Pint (code style)
-        run: vendor/bin/pint --test
-        continue-on-error: true
-
-      - name: PHPStan (static analysis)
-        run: |
-          composer require --dev phpstan/phpstan --with-all-dependencies
-          vendor/bin/phpstan analyse app --level=5 --error-format=github
-        continue-on-error: true
-
-  # ─────────────────────────────────────────────
-  # Security Audit
-  # ─────────────────────────────────────────────
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: Qwizzy_API
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.2"
-          tools: composer:v2
-
-      - name: Install dependencies
-        run: composer install --prefer-dist --no-progress --no-interaction
-
-      - name: Composer Security Audit
-        run: composer audit --format=json | tee composer-audit.json
-        continue-on-error: true
-
-      - name: Upload audit report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: composer-audit-report
-          path: Qwizzy_API/composer-audit.json
-          retention-days: 30
-
-      - name: TruffleHog Secrets Scan
-        uses: trufflesecurity/trufflehog@main
-        with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --only-verified
-
-      - name: Configuration security check
-        run: |
-          echo "Checking APP_DEBUG in .env.example..."
-          if grep -q "APP_DEBUG=true" .env.example 2>/dev/null; then
-            echo "::warning::APP_DEBUG is set to true in .env.example"
-          fi
-
-          echo "Checking CORS configuration..."
-          if grep -E "'allowed_origins'\s*=>\s*\[\s*'\*'\s*\]" config/cors.php 2>/dev/null; then
-            echo "::error::CORS allows all origins (*) - Security risk!"
-            exit 1
-          fi
-
-          echo "Checking for exposed .env..."
-          if [ -f ".env" ]; then
-            echo "::error::.env file found in repository!"
-            exit 1
-          fi
-
-          echo "Configuration security checks passed"
-
-      - name: Psalm Security Analysis
-        run: |
-          composer require --dev vimeo/psalm
-          vendor/bin/psalm --no-cache --show-info=false --taint-analysis
-        continue-on-error: true
-
-  # ─────────────────────────────────────────────
-  # Build
-  # ─────────────────────────────────────────────
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: [tests, quality]
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')
-
-    defaults:
-      run:
-        working-directory: Qwizzy_API
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.2"
-          tools: composer:v2
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: Qwizzy_API/vendor
-          key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
-          restore-keys: ${{ runner.os }}-composer-
-
-      - name: Install Composer dependencies
-        run: composer install --prefer-dist --no-progress --no-interaction --no-dev --optimize-autoloader
-
-      - name: Optimize Laravel
-        run: |
-          cp .env.example .env
-          php artisan key:generate
-          php artisan config:cache
-          php artisan route:cache
-          php artisan view:cache
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: l1nkiz/qwizzy-api
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: Qwizzy_API
-          push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+# name: Backend CI
+# 
+# on:
+#   push:
+#     branches: [master, develop, "feat/**", "fix/**"]
+#     paths:
+#       - "Qwizzy_API/**"
+#       - ".github/workflows/backend-ci.yml"
+#   pull_request:
+#     types: [opened, edited, synchronize, reopened]
+#     paths:
+#       - "Qwizzy_API/**"
+#       - ".github/workflows/backend-ci.yml"
+#   schedule:
+#     - cron: "0 9 * * 1"
+#   workflow_dispatch:
+# 
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}
+#   cancel-in-progress: true
+# 
+# jobs:
+#   # ─────────────────────────────────────────────
+#   # Tests
+#   # ─────────────────────────────────────────────
+#   tests:
+#     name: 🧪 Tests (PHP ${{ matrix.php-version }})
+#     runs-on: ubuntu-latest
+# 
+#     defaults:
+#       run:
+#         working-directory: Qwizzy_API
+# 
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         php-version: ["8.3"]
+# 
+#     services:
+#       postgres:
+#         image: postgres:16-alpine
+#         env:
+#           POSTGRES_DB: testing
+#           POSTGRES_USER: postgres
+#           POSTGRES_PASSWORD: password
+#         ports:
+#           - 5432:5432
+#         options: >-
+#           --health-cmd pg_isready
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
+# 
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+# 
+#       - name: Setup PHP ${{ matrix.php-version }}
+#         uses: shivammathur/setup-php@v2
+#         with:
+#           php-version: ${{ matrix.php-version }}
+#           extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_pgsql, dom, curl, libxml, zip
+#           tools: composer:v2
+# 
+#       - name: Cache Composer dependencies
+#         uses: actions/cache@v4
+#         with:
+#           path: Qwizzy_API/vendor
+#           key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
+#           restore-keys: ${{ runner.os }}-composer-
+# 
+#       - name: Install Composer dependencies
+#         run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
+# 
+#       - name: Copy .env file
+#         run: cp .env.example .env
+# 
+#       - name: Generate application key
+#         run: php artisan key:generate
+# 
+#       - name: Run migrations
+#         env:
+#           DB_CONNECTION: pgsql
+#           DB_HOST: localhost
+#           DB_PORT: 5432
+#           DB_DATABASE: testing
+#           DB_USERNAME: postgres
+#           DB_PASSWORD: password
+#         run: php artisan migrate --force
+# 
+#       - name: Execute tests
+#         env:
+#           DB_CONNECTION: pgsql
+#           DB_HOST: localhost
+#           DB_PORT: 5432
+#           DB_DATABASE: testing
+#           DB_USERNAME: postgres
+#           DB_PASSWORD: password
+#         run: php artisan test
+# 
+#       - name: Upload test results on failure
+#         if: failure()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: test-results-php-${{ matrix.php-version }}
+#           path: Qwizzy_API/storage/logs/
+#           retention-days: 7
+# 
+#   # ─────────────────────────────────────────────
+#   # Code Quality
+#   # ─────────────────────────────────────────────
+#   quality:
+#     name: Code Quality
+#     runs-on: ubuntu-latest
+# 
+#     defaults:
+#       run:
+#         working-directory: Qwizzy_API
+# 
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+# 
+#       - name: Setup PHP
+#         uses: shivammathur/setup-php@v2
+#         with:
+#           php-version: "8.2"
+#           tools: composer:v2, phpcs
+# 
+#       - name: Cache Composer dependencies
+#         uses: actions/cache@v4
+#         with:
+#           path: Qwizzy_API/vendor
+#           key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
+#           restore-keys: ${{ runner.os }}-composer-
+# 
+#       - name: Install dependencies
+#         run: composer install --prefer-dist --no-progress --no-interaction
+# 
+#       - name: PHP CodeSniffer (PSR12)
+#         run: vendor/bin/phpcs --standard=PSR12 app/ --report=summary
+#         continue-on-error: true
+# 
+#       - name: Laravel Pint (code style)
+#         run: vendor/bin/pint --test
+#         continue-on-error: true
+# 
+#       - name: PHPStan (static analysis)
+#         run: |
+#           composer require --dev phpstan/phpstan --with-all-dependencies
+#           vendor/bin/phpstan analyse app --level=5 --error-format=github
+#         continue-on-error: true
+# 
+#   # ─────────────────────────────────────────────
+#   # Security Audit
+#   # ─────────────────────────────────────────────
+#   security:
+#     name: Security Audit
+#     runs-on: ubuntu-latest
+# 
+#     defaults:
+#       run:
+#         working-directory: Qwizzy_API
+# 
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+# 
+#       - name: Setup PHP
+#         uses: shivammathur/setup-php@v2
+#         with:
+#           php-version: "8.2"
+#           tools: composer:v2
+# 
+#       - name: Install dependencies
+#         run: composer install --prefer-dist --no-progress --no-interaction
+# 
+#       - name: Composer Security Audit
+#         run: composer audit --format=json | tee composer-audit.json
+#         continue-on-error: true
+# 
+#       - name: Upload audit report
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: composer-audit-report
+#           path: Qwizzy_API/composer-audit.json
+#           retention-days: 30
+# 
+#       - name: TruffleHog Secrets Scan
+#         uses: trufflesecurity/trufflehog@main
+#         with:
+#           path: ./
+#           base: ${{ github.event.repository.default_branch }}
+#           head: HEAD
+#           extra_args: --only-verified
+# 
+#       - name: Configuration security check
+#         run: |
+#           echo "Checking APP_DEBUG in .env.example..."
+#           if grep -q "APP_DEBUG=true" .env.example 2>/dev/null; then
+#             echo "::warning::APP_DEBUG is set to true in .env.example"
+#           fi
+# 
+#           echo "Checking CORS configuration..."
+#           if grep -E "'allowed_origins'\s*=>\s*\[\s*'\*'\s*\]" config/cors.php 2>/dev/null; then
+#             echo "::error::CORS allows all origins (*) - Security risk!"
+#             exit 1
+#           fi
+# 
+#           echo "Checking for exposed .env..."
+#           if [ -f ".env" ]; then
+#             echo "::error::.env file found in repository!"
+#             exit 1
+#           fi
+# 
+#           echo "Configuration security checks passed"
+# 
+#       - name: Psalm Security Analysis
+#         run: |
+#           composer require --dev vimeo/psalm
+#           vendor/bin/psalm --no-cache --show-info=false --taint-analysis
+#         continue-on-error: true
+# 
+#   # ─────────────────────────────────────────────
+#   # Build
+#   # ─────────────────────────────────────────────
+#   build:
+#     name: Build
+#     runs-on: ubuntu-latest
+#     needs: [tests, quality]
+#     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')
+# 
+#     defaults:
+#       run:
+#         working-directory: Qwizzy_API
+# 
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+# 
+#       - name: Setup PHP
+#         uses: shivammathur/setup-php@v2
+#         with:
+#           php-version: "8.2"
+#           tools: composer:v2
+# 
+#       - name: Cache Composer dependencies
+#         uses: actions/cache@v4
+#         with:
+#           path: Qwizzy_API/vendor
+#           key: ${{ runner.os }}-composer-${{ hashFiles('Qwizzy_API/composer.lock') }}
+#           restore-keys: ${{ runner.os }}-composer-
+# 
+#       - name: Install Composer dependencies
+#         run: composer install --prefer-dist --no-progress --no-interaction --no-dev --optimize-autoloader
+# 
+#       - name: Optimize Laravel
+#         run: |
+#           cp .env.example .env
+#           php artisan key:generate
+#           php artisan config:cache
+#           php artisan route:cache
+#           php artisan view:cache
+# 
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+# 
+#       - name: Extract Docker metadata
+#         id: meta
+#         uses: docker/metadata-action@v5
+#         with:
+#           images: l1nkiz/qwizzy-api
+#           tags: |
+#             type=ref,event=branch
+#             type=semver,pattern={{version}}
+#             type=semver,pattern={{major}}.{{minor}}
+#             type=sha
+# 
+#       - name: Build Docker image
+#         uses: docker/build-push-action@v5
+#         with:
+#           context: Qwizzy_API
+#           push: false
+#           tags: ${{ steps.meta.outputs.tags }}
+#           labels: ${{ steps.meta.outputs.labels }}
+#           cache-from: type=gha
+#           cache-to: type=gha,mode=max
+# 
